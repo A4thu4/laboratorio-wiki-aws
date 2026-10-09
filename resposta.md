@@ -47,12 +47,12 @@ O ponto central da leitura: **dois arquivos são atas e o terceiro é uma base d
 - Cabeçalho ("VENDAS S.A. | ATA DE REUNIÃO SIMULADA") e rodapé ("Material fictício…", "Página N") se repetem nas 5 páginas e viram ruído em todo trecho indexado.
 - A seção 11 repete dados já ditos (data, totais de decisões e ações). Se for indexada, duplica resultados na busca.
 - Os metadados do arquivo não são confiáveis: o PDF foi criado em 10/07/2026, mas a reunião foi em 08/07/2026. A data tem que vir do conteúdo.
-- Grafia inconsistente dentro do próprio documento ("Média" e "Media", "revisão" e "revisao").
+- Acentuação inconsistente dentro do próprio documento: algumas palavras aparecem sem acento ("Media", "revisao", "porem", "generica") enquanto outras o mantêm ("médio", "revisão").
 
 **No PNG**
 - A folha está levemente inclinada, com sombra e fundo cinza em volta.
 - O texto impresso não tem acentos ("REUNIAO", "conversao"), então não casa letra por letra com o vocabulário do PDF.
-- A anotação manuscrita "ação prioritária", circulada em vermelho, está **em cima do prazo 28/02/2026** da primeira deliberação. É o dado mais sensível do documento e o mais sujeito a erro de OCR.
+- A anotação manuscrita "ação prioritária" e o círculo vermelho em volta dela atingem **dois prazos**: o círculo envolve 28/02/2026 (deliberação 1), e a escrita, junto com a borda inferior do círculo, passa por cima de 12/02/2026 (deliberação 2). São os dados mais sensíveis do documento e os mais sujeitos a erro de OCR.
 - A anotação "conferir CRM" está encostada na borda da tabela de indicadores, e o carimbo "DOCUMENTO FICTICIO" está inclinado.
 - O Amazon Textract lê texto impresso em português, mas o suporte oficial a manuscrito cobre o alfabeto inglês e símbolos ASCII. Palavras manuscritas com "ç" e "ã" podem sair erradas.
 - A lista de participantes termina em "e supervisores regionais", ou seja, é incompleta por natureza.
@@ -200,7 +200,7 @@ Sem OCR, nada dessa ata entra na base. A chamada é `AnalyzeDocument` com dois r
 
 Três campos da resposta do Textract são aproveitados:
 - `TextType` (`PRINTED` ou `HANDWRITING`): separa as anotações à mão do corpo da ata. "conferir CRM" e "ação prioritária" são gravadas em um campo próprio e não se misturam ao texto impresso.
-- `Confidence`: toda linha abaixo de um limite (ponto de partida: 85) é marcada para revisão. É o caso esperado do prazo 28/02/2026, coberto pelo círculo vermelho.
+- `Confidence`: toda linha abaixo de um limite (ponto de partida: 85) é marcada para revisão. É o caso esperado dos prazos 28/02/2026 e 12/02/2026, atingidos pelo círculo vermelho e pela anotação.
 - `Geometry`: a posição de cada bloco na imagem é guardada para a Wiki mostrar o recorte do original ao lado da resposta.
 
 A resposta completa do Textract é guardada em JSON em `textract/`, para reprocessar sem pagar OCR de novo.
@@ -247,7 +247,7 @@ Todo documento, venha de PDF, de OCR ou de CSV, termina no mesmo formato: **um J
 - **Conteúdo duplicado.** A seção 11 do PDF repete dados já ditos. Ela não vira trecho indexado, mas é usada como conferência (ver 3.3).
 - **Formatos.** Datas viram ISO 8601 ("15 de janeiro de 2026" e "08/07/2026" viram `2026-01-15` e `2026-07-08`). Valores viram número ("R$ 9,85 mi" vira `9850000.00`), guardando também o texto original.
 - **Acentos.** O texto é mantido como está no documento. Para filtros e comparação de nomes, é gravada uma segunda forma em minúsculas e sem acento, de modo que "Logística" (PDF) e "Logistica" (CSV) caiam no mesmo valor.
-- **Vocabulário controlado.** Valores de status, prioridade e região são mapeados para uma lista única ("Media" e "Média" viram `media`).
+- **Vocabulário controlado.** Valores de status, prioridade e região são mapeados para uma lista única ("Media", como está no PDF, e a forma acentuada "Média" viram `media`).
 
 **Formato canônico (resumo)**
 
@@ -343,7 +343,7 @@ Um modelo de linguagem é a ferramenta certa aqui porque as duas atas têm estru
 - **Listas fechadas** para tipo, status, prioridade e confidencialidade, e temperatura zero.
 - **Conferência com o próprio documento.** A seção 11 do PDF declara 6 participantes, 5 decisões e 6 ações. Se a extração trouxer outra contagem, o documento vai para `REVISAO`.
 - **Confidencialidade conservadora.** O padrão é "Interno". A IA pode sugerir um nível mais restrito, mas tornar um documento público exige uma pessoa.
-- **Revisão humana** para o que foi marcado com baixa confiança, com o Amazon Augmented AI (A2I) mostrando o recorte da imagem ao lado do texto lido.
+- **Revisão humana** para o que foi marcado com baixa confiança, em uma fila própria. O Step Functions pausa o documento nesse ponto (integração com `waitForTaskToken`) e publica a tarefa em uma fila do Amazon SQS. Uma tela de revisão no mesmo site da Wiki, restrita ao grupo `revisores` do Cognito, mostra o recorte da imagem ao lado do texto lido. Quando a pessoa confirma ou corrige, a API devolve o token e a execução continua. O Amazon Augmented AI (A2I) faria esse papel, mas entrou em modo de manutenção e não aceita novos clientes desde 30/07/2026.
 
 **O que a IA não faz.** No CSV não há enriquecimento por linha: os dados já são estruturados, e pedir a um modelo que "leia" 240 linhas só acrescenta custo e risco de erro. A IA entra no CSV em outro ponto, ao traduzir a pergunta do usuário em SQL (ver 4.3).
 
@@ -508,7 +508,7 @@ Uma aplicação web simples, com uma caixa de pergunta, a resposta e um painel d
 - Aviso visível quando a resposta usa trecho pendente de revisão.
 - Botões de "útil" e "não útil" em cada resposta.
 
-**Por que não o Amazon Q Business.** Ele entrega uma interface pronta com conectores e controle de acesso, e seria o caminho mais rápido para um piloto. Não foi escolhido porque cobra por usuário, o que pesa em um acervo pequeno, e porque dá menos controle sobre dois pontos centrais desta proposta: a consulta ao CRM por SQL e o formato das citações.
+**Por que não o Amazon Q Business.** Ele entrega uma interface pronta com conectores e controle de acesso, e já foi o caminho mais rápido para um piloto. Não foi escolhido por três motivos. O principal: entrou em modo de manutenção e não aceita novos clientes desde 30/07/2026, então uma conta nova não consegue adotá-lo. Além disso, cobra por usuário, o que pesa em um acervo pequeno, e dá menos controle sobre dois pontos centrais desta proposta: a consulta ao CRM por SQL e o formato das citações.
 
 ---
 
@@ -562,7 +562,7 @@ Para os três arquivos do laboratório, o custo de processamento é de centavos:
 - Usar um modelo menor nas respostas a perguntas simples reduz o maior item da conta.
 - Enviar menos trechos por pergunta (os 4 melhores, e não 10) reduz tokens sem perder qualidade em um acervo pequeno.
 - Trocar o S3 Vectors pelo OpenSearch Serverless acrescentaria um custo fixo mensal da ordem de centenas de dólares.
-- O Amazon Q Business cobra assinatura por usuário e um índice por hora. Para 50 usuários, ficaria acima do total estimado aqui.
+- O Amazon Q Business não é alternativa para uma conta nova, por estar em modo de manutenção. Para quem já o utiliza, cobra assinatura por usuário e um índice por hora, e para 50 usuários ficaria acima do total estimado aqui.
 
 ---
 
@@ -583,7 +583,7 @@ A arquitetura separa o acervo por natureza do dado e dá a cada tipo o caminho q
 | Amazon S3 | Guarda os originais (bucket imutável, versionado) e os dados processados (texto, saída de OCR, trechos da base, Parquet do CRM) |
 | Amazon S3 Vectors | Base vetorial dos trechos das atas, sem custo mínimo por hora |
 | Amazon EventBridge | Dispara o processamento quando um arquivo chega em `raw/` |
-| AWS Step Functions | Orquestra o fluxo: triagem, escolha de rota, novas tentativas, espera do OCR e tratamento de falhas |
+| AWS Step Functions | Orquestra o fluxo: triagem, escolha de rota, novas tentativas, espera do OCR, pausa para revisão humana e tratamento de falhas |
 | AWS Lambda | Executa cada etapa (registro, triagem, extração de PDF, conversão do CSV, normalização, validação, publicação) e a orquestração das perguntas |
 | Amazon Textract | OCR com tabelas e layout para imagens e PDFs digitalizados. Distingue texto impresso de manuscrito e informa a confiança |
 | Amazon Bedrock | Modelos para enriquecer as atas (extração estruturada), gerar embeddings, traduzir perguntas em SQL e redigir respostas |
@@ -592,13 +592,12 @@ A arquitetura separa o acervo por natureza do dado e dá a cada tipo o caminho q
 | Amazon DynamoDB | Catálogo de documentos, itens extraídos (decisões, ações, riscos), status do processamento e registro de consultas |
 | AWS Glue Data Catalog | Esquema da tabela de oportunidades do CRM |
 | Amazon Athena | Consultas SQL sobre o CRM em Parquet |
-| Amazon Augmented AI (A2I) | Revisão humana dos trechos de OCR com baixa confiança |
 | Amazon Cognito | Login, MFA e grupos de usuários usados no controle de acesso |
 | Amazon API Gateway | Porta de entrada da API, valida o token e limita requisições |
-| AWS Amplify Hosting | Hospeda a interface web |
+| AWS Amplify Hosting | Hospeda a interface web de consulta e a tela de revisão |
 | AWS IAM | Papéis de privilégio mínimo para cada componente |
 | AWS KMS | Chave de criptografia dos dados em repouso |
-| Amazon SQS e Amazon SNS | Fila morta para reprocessar falhas e avisos de alarme |
+| Amazon SQS e Amazon SNS | Fila de revisão humana, fila morta para reprocessar falhas e avisos de alarme |
 | Amazon CloudWatch | Logs, métricas, alarmes e painel de operação |
 | AWS CloudTrail | Auditoria de chamadas de API e de acesso aos arquivos |
 | Amazon Macie | Detecção de dados pessoais nos buckets |
@@ -655,7 +654,7 @@ EventBridge ──► Step Functions
                   │
                   ├──[PDF com texto]──► Lambda extrai camada de texto ─┐
                   ├──[PNG / scan]─────► Textract (TABLES + LAYOUT) ────┤
-                  │                       └─ baixa confiança ► A2I     │
+                  │                       └─ baixa confiança ► revisão │
                   │                                                    ▼
                   │                                   Lambda Normalizar
                   │                                                    ▼
@@ -709,7 +708,7 @@ TRANSVERSAL:  IAM · KMS · CloudTrail · CloudWatch · Macie · Budgets
 **Sua resposta:**
 
 - **Manuscrito em português.** O suporte oficial do Textract a escrita à mão cobre o alfabeto inglês. Anotações como "ação prioritária" podem sair erradas, e por isso ficam em campo separado e sinalizado.
-- **Texto sobreposto.** O prazo 28/02/2026 está parcialmente coberto por uma anotação. Mesmo com revisão humana, a origem do erro é a qualidade do original.
+- **Texto sobreposto.** Os prazos 28/02/2026 e 12/02/2026 estão parcialmente cobertos por uma anotação e pelo círculo em volta dela. Mesmo com revisão humana, a origem do erro é a qualidade do original.
 - **Extração por IA pode errar.** A exigência de evidência literal reduz invenção, mas não impede atribuição errada (ligar um prazo à ação vizinha). A conferência de totais só existe quando o documento declara totais, como no PDF.
 - **Sem busca por palavra-chave.** O S3 Vectors só faz busca semântica. Termos exatos fora dos identificadores tratados (um número de contrato no meio de um parágrafo, por exemplo) podem não ser encontrados.
 - **SQL gerado por modelo.** Uma pergunta ambígua pode gerar uma consulta que roda sem erro e responde outra coisa. A resposta mostra o filtro aplicado para o usuário conferir.

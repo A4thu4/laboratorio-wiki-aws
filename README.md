@@ -4,7 +4,7 @@ Proposta de arquitetura para o Desafio de Projeto **"A Wiki Perdida dos Arquivos
 
 A solução transforma três arquivos brutos e sem organização em uma base que responde perguntas em linguagem natural e cita o documento de onde tirou cada informação, usando apenas serviços da AWS.
 
-> **Situação do projeto:** esta é uma proposta de arquitetura. Nada foi implantado na AWS. A resposta completa, Quest por Quest, está em [`resposta.md`](resposta.md). Os arquivos originais estão em [`raw/`](raw/) e não foram alterados.
+> **Situação do projeto:** esta é uma proposta de arquitetura. Nada foi implantado na AWS; o repositório traz apenas um script para testar a rota de OCR. A resposta completa, Quest por Quest, está em [`resposta.md`](resposta.md). Os arquivos originais estão em [`raw/`](raw/) e não foram alterados.
 
 ---
 
@@ -85,7 +85,7 @@ Sem OCR, nada dessa ata entra na base. O Textract é chamado com dois recursos:
 - **Tabelas**, porque os indicadores estão em uma tabela. Só com detecção de texto, "R$ 9,85 mi" perderia a ligação com "Faturamento".
 - **Layout**, para identificar título e seções e dividir a ata por elas.
 
-O Textract também informa se cada palavra é impressa ou manuscrita, e com que confiança foi lida. As anotações "conferir CRM" e "ação prioritária" ficam em campo separado. O prazo 28/02/2026, parcialmente coberto por uma anotação, tende a sair com confiança baixa e vai para revisão humana antes de ser publicado.
+O Textract também informa se cada palavra é impressa ou manuscrita, e com que confiança foi lida. As anotações "conferir CRM" e "ação prioritária" ficam em campo separado. Os prazos 28/02/2026 e 12/02/2026, parcialmente cobertos por uma anotação e pelo círculo em volta dela, tendem a sair com confiança baixa e vão para revisão humana antes de serem publicados.
 
 ### CSV: tabela consultada por SQL
 
@@ -155,9 +155,25 @@ Não encontrei essa informação nos documentos indexados.
 
 ---
 
+## Evidência da rota de OCR
+
+O script [`scripts/analisar_ata_textract.py`](scripts/analisar_ata_textract.py) executa no Amazon Textract a chamada proposta para a ata digitalizada (`AnalyzeDocument` com tabelas e layout). Ele gera um relatório com a tabela de indicadores reconstruída, as palavras classificadas como manuscritas, os prazos das deliberações com a confiança de cada data e as linhas abaixo do limite de confiança.
+
+Para rodar no AWS CloudShell, que já tem Python, `boto3` e as credenciais da conta:
+
+```bash
+git clone https://github.com/A4thu4/laboratorio-wiki-aws
+cd laboratorio-wiki-aws
+python3 scripts/analisar_ata_textract.py
+```
+
+A execução processa uma página e grava o resultado em uma pasta `evidencias/`, criada na hora. O arquivo em `raw/` é apenas lido. O resultado dessa execução ainda não faz parte do repositório.
+
+---
+
 ## O que aprendi
 
-- **Abrir os arquivos antes de escolher serviços.** A extensão diz pouco. Só olhando o conteúdo ficou claro que o PDF é quase todo tabela, que a anotação do PNG cai em cima de uma data e que o CSV não tem data de extração.
+- **Abrir os arquivos antes de escolher serviços.** A extensão diz pouco. Só olhando o conteúdo ficou claro que o PDF é quase todo tabela, que a anotação do PNG cai em cima de dois prazos e que o CSV não tem data de extração.
 - **OCR tem custo e tem erro.** Usar o Textract onde já existe texto é pagar para piorar o dado. A triagem por página é o que evita isso.
 - **Busca semântica não faz conta.** Dado tabular precisa de SQL. Misturar os dois caminhos em uma única ferramenta daria respostas erradas com aparência de certas.
 - **Metadado é o que liga os documentos.** A campanha "Rota 120" aparece em uma decisão da ata e em 96 linhas do CSV, e só um metadado em comum permite cruzar os dois.
@@ -172,6 +188,7 @@ Não encontrei essa informação nos documentos indexados.
 .
 ├── README.md      # este arquivo
 ├── resposta.md    # proposta completa, pelas 4 Quests
+├── scripts/       # script que testa a rota de OCR no Amazon Textract
 └── raw/           # documentos originais do desafio, sem alteração
 ```
 
