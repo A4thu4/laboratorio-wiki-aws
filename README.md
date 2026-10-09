@@ -179,4 +179,4 @@ Não encontrei essa informação nos documentos indexados.
 
 ## Autor
 
-Arthur Mamedes Borges · [github.com/A4thu4](https://github.com/A4thu4)
+**Arthur Mamedes Borges** - [@A4thu4](https://github.com/A4thu4)
