@@ -4,7 +4,7 @@ Proposta de arquitetura para o Desafio de Projeto **"A Wiki Perdida dos Arquivos
 
 A solução transforma três arquivos brutos e sem organização em uma base que responde perguntas em linguagem natural e cita o documento de onde tirou cada informação, usando apenas serviços da AWS.
 
-> **Situação do projeto:** esta é uma proposta de arquitetura. Nada foi implantado na AWS; o repositório traz apenas um script para testar a rota de OCR. A resposta completa, Quest por Quest, está em [`resposta.md`](resposta.md). Os arquivos originais estão em [`raw/`](raw/) e não foram alterados.
+> **Situação do projeto:** esta é uma proposta de arquitetura. A arquitetura completa não foi implantada. A rota de OCR foi testada de verdade no Amazon Textract, e o resultado está em [`evidencias/textract-relatorio.md`](evidencias/textract-relatorio.md). A resposta completa, Quest por Quest, está em [`resposta.md`](resposta.md). Os arquivos originais estão em [`raw/`](raw/) e não foram alterados.
 
 ---
 
@@ -85,7 +85,7 @@ Sem OCR, nada dessa ata entra na base. O Textract é chamado com dois recursos:
 - **Tabelas**, porque os indicadores estão em uma tabela. Só com detecção de texto, "R$ 9,85 mi" perderia a ligação com "Faturamento".
 - **Layout**, para identificar título e seções e dividir a ata por elas.
 
-O Textract também informa se cada palavra é impressa ou manuscrita, e com que confiança foi lida. As anotações "conferir CRM" e "ação prioritária" ficam em campo separado. Os prazos 28/02/2026 e 12/02/2026, parcialmente cobertos por uma anotação e pelo círculo em volta dela, tendem a sair com confiança baixa e vão para revisão humana antes de serem publicados.
+O Textract também informa a confiança e a posição de cada palavra. No teste real, a tabela de indicadores saiu íntegra, e os prazos 28/02/2026 e 12/02/2026, parcialmente cobertos por uma anotação, foram lidos corretamente. As anotações à mão não foram classificadas como manuscritas. Por isso a proposta as identifica pela baixa confiança e pela sobreposição com outras linhas, e manda para revisão humana tudo o que elas tocam.
 
 ### CSV: tabela consultada por SQL
 
@@ -100,7 +100,7 @@ O CSV é validado, convertido para Parquet e registrado no Glue Data Catalog. As
 | **Amazon S3** | Armazenamento durável e barato. Versionamento e Object Lock garantem que o original não muda |
 | **AWS Step Functions** | O fluxo tem três rotas, esperas e novas tentativas. Ele mostra cada execução passo a passo, o que Lambdas encadeadas esconderiam |
 | **AWS Lambda** | Cada etapa é curta e roda sob demanda. Sem arquivo novo, sem custo |
-| **Amazon Textract** | Parte do acervo é imagem. Além do texto, entrega a estrutura de tabelas, separa impresso de manuscrito e informa a confiança |
+| **Amazon Textract** | Parte do acervo é imagem. Além do texto, entrega a estrutura de tabelas e informa a confiança e a posição de cada palavra |
 | **Amazon Bedrock** | Modelos de linguagem dentro da AWS, sem serviço externo. Usado para extrair dados das atas, gerar embeddings, escrever SQL e redigir respostas |
 | **Bedrock Knowledge Bases** | Gera e sincroniza os embeddings a partir do S3 e faz a busca com filtro por metadados, sem código próprio para isso |
 | **Amazon S3 Vectors** | Base vetorial sem custo mínimo por hora, adequada a um acervo pequeno. A contrapartida é não ter busca por palavra-chave |
@@ -117,7 +117,7 @@ A região proposta é `us-east-1`, porque o Textract não tem endpoint em São P
 
 ## Exemplos de uso
 
-As respostas abaixo são as **esperadas**, montadas a partir da leitura dos três arquivos. Os números do CRM foram calculados localmente sobre o CSV. A solução não foi executada na AWS.
+As respostas abaixo são as **esperadas**, montadas a partir da leitura dos três arquivos. Os números do CRM foram calculados localmente sobre o CSV. Da solução, apenas a leitura da ata digitalizada pelo Textract foi executada na AWS.
 
 **Pergunta sobre uma ata**
 
@@ -140,7 +140,7 @@ A meta aprovada foi gerar R$ 6.000.000 em pipeline qualificado até 30/09/2026. 
 Das 46 oportunidades perdidas: Preço, 15 (32,6%); Prioridade adiada, 11 (23,9%); Concorrente escolhido, 9 (19,6%); Sem orçamento, 5; Baixa aderência, 4; Sem retorno, 2.
 *Fonte: `vendas_sa_dados_ficticios_laboratorio.csv`, filtro `status = 'Perdida'`, 46 linhas.*
 
-**Pergunta sobre trecho de baixa confiança**
+**Pergunta sobre trecho com anotação sobreposta**
 
 > Qual o prazo para expandir a equipe de vendas do Norte?
 
@@ -157,9 +157,30 @@ Não encontrei essa informação nos documentos indexados.
 
 ## Evidência da rota de OCR
 
-O script [`scripts/analisar_ata_textract.py`](scripts/analisar_ata_textract.py) executa no Amazon Textract a chamada proposta para a ata digitalizada (`AnalyzeDocument` com tabelas e layout). Ele gera um relatório com a tabela de indicadores reconstruída, as palavras classificadas como manuscritas, os prazos das deliberações com a confiança de cada data e as linhas abaixo do limite de confiança.
+A rota de OCR foi executada de verdade em 09/10/2026. O script [`scripts/analisar_ata_textract.py`](scripts/analisar_ata_textract.py) enviou a ata digitalizada ao Amazon Textract (`AnalyzeDocument` com tabelas e layout, em `us-east-1`). O relatório completo, com o texto linha a linha, está em [`evidencias/textract-relatorio.md`](evidencias/textract-relatorio.md).
 
-Para rodar no AWS CloudShell, que já tem Python, `boto3` e as credenciais da conta:
+| Medida | Resultado |
+|---|---|
+| Linhas e palavras detectadas | 70 linhas, 340 palavras |
+| Confiança média das linhas | 97,2% |
+| Tabelas reconstruídas | 2 |
+| Blocos de layout | 1 título, 5 cabeçalhos de seção, 2 listas, 1 tabela |
+| Linhas abaixo de 85% de confiança | 1 (`prioritaria`, 76,63%) |
+| Palavras classificadas como manuscritas | 0 |
+
+**O que o teste confirmou**
+
+- A tabela de indicadores foi reconstruída inteira (7 linhas por 4 colunas), com todos os valores corretos.
+- O bloco de identificação (data, horário, local e objetivo) também voltou como tabela, com campo e valor já separados.
+- Os quatro prazos foram lidos corretamente, inclusive os dois atingidos pela anotação: 28/02/2026 (98,36%) e 12/02/2026 (92,45%).
+
+**O que o teste corrigiu na proposta**
+
+- Nenhuma palavra foi classificada como manuscrita. "conferir CRM" entrou como linha comum, e de "ação prioritária" só restou "prioritaria". Separar anotações apenas pelo tipo de escrita não funciona neste documento.
+- O limite de confiança não marcaria os prazos para revisão, porque eles saíram com confiança alta. A proposta passou a detectar a sobreposição pela posição das linhas.
+- Apareceram erros de leitura que eu não tinha previsto: o "O" maiúsculo isolado saiu como "0" em três pontos, e hífens e barras separadoras sumiram ("Sala Comercial 3 Matriz").
+
+Para repetir o teste no AWS CloudShell, que já tem Python, `boto3` e as credenciais da conta:
 
 ```bash
 git clone https://github.com/A4thu4/laboratorio-wiki-aws
@@ -167,7 +188,7 @@ cd laboratorio-wiki-aws
 python3 scripts/analisar_ata_textract.py
 ```
 
-A execução processa uma página e grava o resultado em uma pasta `evidencias/`, criada na hora. O arquivo em `raw/` é apenas lido. O resultado dessa execução ainda não faz parte do repositório.
+A execução processa uma página. O arquivo em `raw/` é apenas lido.
 
 ---
 
@@ -178,6 +199,7 @@ A execução processa uma página e grava o resultado em uma pasta `evidencias/`
 - **Busca semântica não faz conta.** Dado tabular precisa de SQL. Misturar os dois caminhos em uma única ferramenta daria respostas erradas com aparência de certas.
 - **Metadado é o que liga os documentos.** A campanha "Rota 120" aparece em uma decisão da ata e em 96 linhas do CSV, e só um metadado em comum permite cruzar os dois.
 - **Rastreabilidade se constrói desde a entrada.** Hash, versão e página precisam ser gravados na ingestão. Não dá para acrescentar a citação depois.
+- **Testar derruba suposições.** Eu esperava que os prazos cobertos pela anotação saíssem com confiança baixa e que o Textract marcasse as anotações como manuscritas. No teste, os prazos saíram certos e nenhuma palavra foi marcada. A proposta mudou por causa disso.
 - **Toda escolha tem contrapartida.** O S3 Vectors é o mais barato e não tem busca por palavra-chave. A região com Textract fica fora do Brasil. Registrar essas limitações faz parte da proposta.
 
 ---
@@ -189,6 +211,7 @@ A execução processa uma página e grava o resultado em uma pasta `evidencias/`
 ├── README.md      # este arquivo
 ├── resposta.md    # proposta completa, pelas 4 Quests
 ├── scripts/       # script que testa a rota de OCR no Amazon Textract
+├── evidencias/    # relatório da execução real do Textract
 └── raw/           # documentos originais do desafio, sem alteração
 ```
 
